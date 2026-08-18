@@ -19,7 +19,7 @@ const DOC_I18N = {
     quote: 'عرض سعر', quote_en:'QUOTATION',
     docNo:'رقم المستند', date:'التاريخ', client:'العميل', project:'المشروع',
     location:'الموقع', ref:'المرجع', statement:'تفاصيل المستند', item:'البيان',
-    qty:'الكمية', value:'القيمة (USD)', subtotalMaterials:'إجمالي المواد والتوريدات',
+    qty:'الكمية', unitPrice:'السعر المفرد', value:'الإجمالي', subtotalMaterials:'إجمالي المواد والتوريدات',
     labor:'أجرة أعمال', total:'الإجمالي', paidPrev:'المدفوع سابقاً', dueBalance:'الرصيد المستحق',
     notesTitle:'ملاحظات وشروط:',
     notesInvoice:'الأسعار بالدولار الأميركي. تُستحق الفاتورة عند الاستلام ما لم يُتفق على غير ذلك. الضمان: سنة على أعمال التركيب وضمان الوكيل على المعدات. أي أعمال أو مواد إضافية تُدرج في فاتورة لاحقة.',
@@ -49,7 +49,7 @@ const DOC_I18N = {
     quote: 'Quotation', quote_en:'عرض سعر',
     docNo:'Document No.', date:'Date', client:'Client', project:'Project',
     location:'Location', ref:'Reference', statement:'Document Details', item:'Description',
-    qty:'Qty', value:'Value (USD)', subtotalMaterials:'Materials & Supplies Subtotal',
+    qty:'Qty', unitPrice:'Unit Price', value:'Total', subtotalMaterials:'Materials & Supplies Subtotal',
     labor:'Labor Charges', total:'Total', paidPrev:'Previously Paid', dueBalance:'Balance Due',
     notesTitle:'Notes & Terms:',
     notesInvoice:'Prices in US Dollars. Invoice is due upon receipt unless otherwise agreed. Warranty: one year on installation work; equipment covered by manufacturer/agent warranty. Additional work or materials will be billed separately.',
@@ -207,12 +207,32 @@ async function docQrFooterHtml(sig, doc, lang){
     <div class="doc-qr-code-text">${payload}</div>
   </div>`;
 }
+function signColHtml(label){
+  return `<img class="sg" src="assets/signature.png" alt=""><div class="doc-sign-line">${label}</div>`;
+}
+function blankSignColHtml(label){
+  return `<div class="sign-spacer"></div><div class="doc-sign-line">${label}</div>`;
+}
+function docFootzoneHtml(cols){
+  return `<div class="doc-footzone">${cols.filter(Boolean).map(c=>`<div class="fcol">${c}</div>`).join('')}</div>`;
+}
 
 // ---------------- Items table helper -------------------------------------
+function lineTotalOf(it){
+  const qty = Number(it.qty||0);
+  if (it.unitPrice != null && it.unitPrice !== '') return +(qty * Number(it.unitPrice)).toFixed(2);
+  return Number(it.value||0);
+}
+function unitPriceOf(it){
+  if (it.unitPrice != null && it.unitPrice !== '') return Number(it.unitPrice);
+  const qty = Number(it.qty||0);
+  return qty ? Number(it.value||0) / qty : Number(it.value||0);
+}
 function itemsRowsHtml(items, lang){
-  return items.map((it, i) => `
-    <tr class="${i%2?'alt':''}"><td>${escapeHtml(it.name)}</td><td class="q">${it.qty}</td><td class="v">${fmt(it.value)}</td></tr>
-  `).join('');
+  return items.map((it, i) => {
+    const qty = Number(it.qty||0);
+    return `<tr class="${i%2?'alt':''}"><td>${escapeHtml(it.name)}</td><td class="q">${qty}</td><td class="v">${fmt(unitPriceOf(it))}</td><td class="v">${fmt(lineTotalOf(it))}</td></tr>`;
+  }).join('');
 }
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -227,7 +247,7 @@ async function renderInvoiceLike(kind, data, lang){
   // kind: 'invoice' | 'quote'
   const D = DOC_I18N[lang];
   const items = data.items || [];
-  const materialsTotal = items.reduce((s,it)=> s + Number(it.value||0), 0);
+  const materialsTotal = items.reduce((s,it)=> s + lineTotalOf(it), 0);
   const labor = Number(data.labor||0);
   const laborLabel = data.laborLabel || D.labor;
   const total = materialsTotal + labor;
@@ -243,17 +263,17 @@ async function renderInvoiceLike(kind, data, lang){
   const sig = await Crypto.signDoc(doc);
 
   const rows = itemsRowsHtml(items, lang);
-  const laborRow = labor ? `<tr class="sub"><td>${escapeHtml(laborLabel)}</td><td class="q">1</td><td class="v">${fmt(labor)}</td></tr>` : '';
-  const materialsSubtotalRow = `<tr class="sub"><td>${D.subtotalMaterials}</td><td class="q">—</td><td class="v">${fmt(materialsTotal)}</td></tr>`;
+  const laborRow = labor ? `<tr class="sub"><td>${escapeHtml(laborLabel)}</td><td class="q"></td><td class="v"></td><td class="v">${fmt(labor)}</td></tr>` : '';
+  const materialsSubtotalRow = `<tr class="sub"><td>${D.subtotalMaterials}</td><td class="q"></td><td class="v"></td><td class="v">${fmt(materialsTotal)}</td></tr>`;
 
   let tailRows = '';
   if (kind === 'invoice'){
     tailRows = `
-      <tr class="tot"><td>${D.total}</td><td class="q"></td><td class="v">${fmt(total)}</td></tr>
-      <tr class="paid"><td>${D.paidPrev}</td><td class="q"></td><td class="v">${fmt(paidPrev)}</td></tr>
-      <tr class="due"><td>${D.dueBalance}</td><td class="q"></td><td class="v">${fmt(due)}</td></tr>`;
+      <tr class="tot"><td>${D.total}</td><td class="q"></td><td class="v"></td><td class="v">${fmt(total)}</td></tr>
+      <tr class="paid"><td>${D.paidPrev}</td><td class="q"></td><td class="v"></td><td class="v">${fmt(paidPrev)}</td></tr>
+      <tr class="due"><td>${D.dueBalance}</td><td class="q"></td><td class="v"></td><td class="v">${fmt(due)}</td></tr>`;
   } else {
-    tailRows = `<tr class="tot"><td>${D.total}</td><td class="q"></td><td class="v">${fmt(total)}</td></tr>`;
+    tailRows = `<tr class="tot"><td>${D.total}</td><td class="q"></td><td class="v"></td><td class="v">${fmt(total)}</td></tr>`;
   }
 
   const dueBoxLabel = kind === 'invoice' ? D.dueBalance : D.total;
@@ -274,7 +294,7 @@ async function renderInvoiceLike(kind, data, lang){
     </tr></table></div>
     <div class="doc-sec">${D.statement}</div>
     <table class="doc-items">
-      <tr><th>${D.item}</th><th class="q" style="width:70px">${D.qty}</th><th class="v" style="width:110px">${D.value}</th></tr>
+      <tr><th>${D.item}</th><th class="q" style="width:55px">${D.qty}</th><th class="v" style="width:85px">${D.unitPrice}</th><th class="v" style="width:90px">${D.value}</th></tr>
       ${rows}
       ${materialsSubtotalRow}
       ${laborRow}
@@ -289,11 +309,7 @@ async function renderInvoiceLike(kind, data, lang){
         <div class="doc-duebox"><div class="h">${dueBoxLabel}</div><div class="v">${fmt(dueBoxVal)} USD</div></div>
       </td>
     </tr></table></div>
-    <div class="doc-footzone"><table style="width:100%"><tr>
-      <td style="width:34%"><img class="sg" src="assets/signature.png"><div class="doc-sign-line">${D.signCompany}</div></td>
-      <td style="width:28%">${await docQrFooterHtml(sig, doc, lang)}</td>
-      <td style="width:34%"><div style="height:46px"></div><div class="doc-sign-line">${D.signClient}</div></td>
-    </tr></table></div>
+    ${docFootzoneHtml([signColHtml(D.signCompany), await docQrFooterHtml(sig, doc, lang), blankSignColHtml(D.signClient)])}
     ${docFooterHtml()}
   </div>`;
   return { html, doc, sig, qrId: doc._qrId, qrPayload: Crypto.buildQrPayload(doc, sig) };
@@ -325,11 +341,7 @@ async function renderReceipt(data, lang){
       <tr class="due"><td>${D.amount}</td><td class="v">${fmt(amount)}</td></tr>
     </table>
     <div class="doc-words"><b>${D.amountWords}:</b> ${amountToWords(amount, lang)}</div>
-    <div class="doc-footzone"><table style="width:100%"><tr>
-      <td style="width:34%"><img class="sg" src="assets/signature.png"><div class="doc-sign-line">${D.signCompany}</div></td>
-      <td style="width:28%">${await docQrFooterHtml(sig, doc, lang)}</td>
-      <td style="width:34%"><div style="height:46px"></div><div class="doc-sign-line">${D.signClient}</div></td>
-    </tr></table></div>
+    ${docFootzoneHtml([signColHtml(D.signCompany), await docQrFooterHtml(sig, doc, lang), blankSignColHtml(D.signClient)])}
     ${docFooterHtml()}
   </div>`;
   return { html, doc, sig, qrId: doc._qrId, qrPayload: Crypto.buildQrPayload(doc, sig) };
@@ -364,11 +376,7 @@ async function renderDelivery(data, lang){
       ${rows}
     </table>
     <div class="doc-blocks"><div class="doc-notes"><b>${D.notesTitle}</b><p>${D.notesDelivery}</p></div></div>
-    <div class="doc-footzone"><table style="width:100%"><tr>
-      <td style="width:34%"><div style="height:46px"></div><div class="doc-sign-line">${D.deliveredBy}</div></td>
-      <td style="width:28%">${await docQrFooterHtml(sig, doc, lang)}</td>
-      <td style="width:34%"><div style="height:46px"></div><div class="doc-sign-line">${D.signReceiver}</div></td>
-    </tr></table></div>
+    ${docFootzoneHtml([blankSignColHtml(D.deliveredBy), await docQrFooterHtml(sig, doc, lang), blankSignColHtml(D.signReceiver)])}
     ${docFooterHtml()}
   </div>`;
   return { html, doc, sig, qrId: doc._qrId, qrPayload: Crypto.buildQrPayload(doc, sig) };
@@ -396,11 +404,7 @@ async function renderCert(data, lang){
       <br><br>${D.certBody}
       ${data.extra ? `<br><br>${escapeHtml(data.extra)}` : ''}
     </div>
-    <div class="doc-footzone"><table style="width:100%"><tr>
-      <td style="width:34%"><img class="sg" src="assets/signature.png"><div class="doc-sign-line">${D.signCompany}</div></td>
-      <td style="width:28%">${await docQrFooterHtml(sig, doc, lang)}</td>
-      <td style="width:34%"></td>
-    </tr></table></div>
+    ${docFootzoneHtml([signColHtml(D.signCompany), await docQrFooterHtml(sig, doc, lang)])}
     ${docFooterHtml()}
   </div>`;
   return { html, doc, sig, qrId: doc._qrId, qrPayload: Crypto.buildQrPayload(doc, sig) };
@@ -446,11 +450,7 @@ async function renderSOA(data, lang){
       ${rows}
       <tr class="due"><td colspan="4">${D.closingBal}</td><td class="v">${fmt(closing)}</td></tr>
     </table>
-    <div class="doc-footzone"><table style="width:100%"><tr>
-      <td style="width:34%"><img class="sg" src="assets/signature.png"><div class="doc-sign-line">${D.signCompany}</div></td>
-      <td style="width:28%">${await docQrFooterHtml(sig, doc, lang)}</td>
-      <td style="width:34%"></td>
-    </tr></table></div>
+    ${docFootzoneHtml([signColHtml(D.signCompany), await docQrFooterHtml(sig, doc, lang)])}
     ${docFooterHtml()}
   </div>`;
   return { html, doc, sig, qrId: doc._qrId, qrPayload: Crypto.buildQrPayload(doc, sig) };

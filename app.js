@@ -42,15 +42,28 @@ function closePreviewOverlay(){ document.body.classList.remove('show-preview'); 
 
 // ---------------- generic item-row widgets -------------------------------
 function addStdItemRow(containerId, item){
-  item = item || { name:'', qty:1, value:0 };
+  item = item || { name:'', qty:1, unitPrice:0, value:0 };
   const row = document.createElement('div');
   row.className = 'rowline';
   row.innerHTML =
-    '<input type="text" class="grow it-name" placeholder="اسم البند" value="' + escAttr(item.name) + '">' +
-    '<input type="number" step="0.01" class="it-qty" style="width:60px" value="' + item.qty + '">' +
-    '<input type="number" step="0.01" class="it-value" style="width:80px" value="' + item.value + '">' +
-    '<button type="button" class="btn danger sm it-remove" style="padding:6px 8px">×</button>';
+    '<input type="text" class="it-name" placeholder="اسم البند" value="' + escAttr(item.name) + '">' +
+    '<div class="rowline-nums">' +
+      '<div class="numcol"><span class="numlabel">الكمية</span><input type="number" step="0.01" class="it-qty" value="' + item.qty + '"></div>' +
+      '<div class="numcol"><span class="numlabel">السعر المفرد</span><input type="number" step="0.01" class="it-price" value="' + (item.unitPrice!=null?item.unitPrice:0) + '"></div>' +
+      '<div class="numcol"><span class="numlabel">الإجمالي</span><input type="number" step="0.01" class="it-value" value="' + item.value + '"></div>' +
+      '<button type="button" class="btn danger sm it-remove" style="padding:6px 8px;align-self:flex-end">×</button>' +
+    '</div>';
   document.getElementById(containerId).appendChild(row);
+  const qtyEl = row.querySelector('.it-qty');
+  const priceEl = row.querySelector('.it-price');
+  const valueEl = row.querySelector('.it-value');
+  function recalcLine(){
+    const q = parseFloat(qtyEl.value || 0) || 0;
+    const p = parseFloat(priceEl.value || 0) || 0;
+    valueEl.value = (q * p).toFixed(2);
+  }
+  qtyEl.addEventListener('input', recalcLine);
+  priceEl.addEventListener('input', recalcLine);
   row.querySelector('.it-remove').onclick = function(){
     row.remove();
     document.getElementById(containerId).dispatchEvent(new Event('input'));
@@ -63,8 +76,9 @@ function readStdItems(containerId){
   rows.forEach(r=>{
     const name = r.querySelector('.it-name').value.trim();
     const qty = parseFloat(r.querySelector('.it-qty').value || 0) || 0;
+    const unitPrice = parseFloat(r.querySelector('.it-price').value || 0) || 0;
     const value = parseFloat(r.querySelector('.it-value').value || 0) || 0;
-    if (name) out.push({ name, qty, value });
+    if (name) out.push({ name, qty, unitPrice, value });
   });
   return out;
 }
@@ -72,7 +86,7 @@ function readStdItems(containerId){
 function addDnItemRow(containerId, item){
   item = item || { name:'', qty:1 };
   const row = document.createElement('div');
-  row.className = 'rowline';
+  row.className = 'rowline rowline-simple';
   row.innerHTML =
     '<input type="text" class="grow it-name" placeholder="اسم البند" value="' + escAttr(item.name) + '">' +
     '<input type="number" step="0.01" class="it-qty" style="width:70px" value="' + item.qty + '">' +
