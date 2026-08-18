@@ -1,0 +1,7 @@
+{
+  "name": "icool-documents-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "منصة iCOOL لإصدار الفواتير وكشوف الحساب والإيصالات وسائر المستندات الرسمية",
+  "engines": { "node": ">=18" }
+}

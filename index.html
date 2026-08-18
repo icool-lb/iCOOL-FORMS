@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#14406e">
+<title>iCOOL Documents Platform</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="lang-ar">
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand"><img src="assets/logo.png" alt="iCOOL"><span data-i18n="appName">منصة iCOOL للمستندات</span></div>
+    <div class="actions">
+      <button class="iconbtn" id="btnLangSwitch" data-i18n="lang_switch">English</button>
+    </div>
+  </div>
+
+  <div class="tabbar" id="tabbar">
+    <button class="tabbtn active" data-view="home" data-i18n="tab_home">الرئيسية</button>
+    <button class="tabbtn" data-view="invoice" data-i18n="tab_invoice">فاتورة</button>
+    <button class="tabbtn" data-view="quote" data-i18n="tab_quote">عرض سعر</button>
+    <button class="tabbtn" data-view="soa" data-i18n="tab_soa">كشف حساب</button>
+    <button class="tabbtn" data-view="receipt" data-i18n="tab_receipt">إيصال قبض</button>
+    <button class="tabbtn" data-view="delivery" data-i18n="tab_delivery">إذن تسليم</button>
+    <button class="tabbtn" data-view="cert" data-i18n="tab_cert">شهادة خبرة</button>
+    <button class="tabbtn" data-view="ai" data-i18n="tab_ai">الذكاء الاصطناعي</button>
+    <button class="tabbtn" data-view="verify" data-i18n="tab_verify">التحقق</button>
+    <button class="tabbtn" data-view="customers" data-i18n="tab_customers">الزبائن</button>
+    <button class="tabbtn" data-view="archive" data-i18n="tab_archive">الأرشيف</button>
+    <button class="tabbtn" data-view="settings" data-i18n="tab_settings">الإعدادات</button>
+  </div>
+
+  <!-- ============================== HOME ============================== -->
+  <div class="view active" id="view-home">
+    <div class="card">
+      <h2 data-i18n="home_title">أهلاً بك في منصة iCOOL للمستندات</h2>
+      <p class="small" data-i18n="home_sub">إصدار الفواتير وكشوف الحساب والإيصالات...</p>
+      <div class="msg info" data-i18n="home_local_warn">⚠️ كل البيانات محفوظة محليًا على هذا الجهاز فقط...</div>
+      <div class="grid cols-2" id="homeStats"></div>
+    </div>
+    <div class="card">
+      <h2 data-i18n="quick_new">إصدار مستند جديد</h2>
+      <div class="chiprow">
+        <button class="chip" data-goto="invoice">فاتورة</button>
+        <button class="chip" data-goto="quote">عرض سعر</button>
+        <button class="chip" data-goto="receipt">إيصال قبض</button>
+        <button class="chip" data-goto="delivery">إذن تسليم</button>
+        <button class="chip" data-goto="soa">كشف حساب</button>
+        <button class="chip" data-goto="cert">شهادة خبرة</button>
+        <button class="chip" data-goto="ai">✨ اكتب واطلب (ذكاء اصطناعي)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== INVOICE ============================== -->
+  <div class="view" id="view-invoice">
+    <div class="card">
+      <h2>فاتورة جديدة</h2>
+      <div class="grid cols-2">
+        <div class="field">
+          <label>العميل — من القائمة</label>
+          <select id="inv-customerSelect"><option value="">— اسم يدوي بدون ربط بكشف حساب —</option></select>
+        </div>
+        <div class="field">
+          <label>أو اسم يدوي</label>
+          <input type="text" id="inv-customerNameManual" placeholder="اسم العميل">
+        </div>
+        <div class="field"><label>المشروع</label><input type="text" id="inv-project"></div>
+        <div class="field"><label>الموقع</label><input type="text" id="inv-location"></div>
+        <div class="field"><label>المرجع</label><input type="text" id="inv-ref"></div>
+        <div class="field"><label>التاريخ</label><input type="date" id="inv-date"></div>
+        <div class="field"><label>لغة المستند</label>
+          <select id="inv-lang"><option value="ar">عربي</option><option value="en">English</option></select>
+        </div>
+      </div>
+
+      <h3>بنود المواد والتوريدات</h3>
+      <div class="itemsHead"><div style="flex:1">البيان</div><div style="width:60px">الكمية</div><div style="width:80px">القيمة</div><div style="width:26px"></div></div>
+      <div id="inv-items"></div>
+      <button class="btn outline sm" id="inv-addItem" type="button">+ إضافة بند</button>
+
+      <div class="grid cols-2" style="margin-top:12px">
+        <div class="field"><label>أجرة أعمال (اختياري)</label><input type="number" step="0.01" id="inv-labor" value="0"></div>
+        <div class="field"><label>عنوان بند الأجرة</label><input type="text" id="inv-laborLabel" placeholder="أجرة أعمال / اليد العاملة..."></div>
+        <div class="field"><label>المدفوع سابقًا</label><input type="number" step="0.01" id="inv-paidPrev" value="0"></div>
+      </div>
+
+      <div class="msg info" id="inv-totalsPreview">الإجمالي: 0.00 $</div>
+      <div class="btnrow">
+        <button class="btn" id="inv-preview" type="button">👁 معاينة</button>
+        <button class="btn orange" id="inv-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn outline" id="inv-save" type="button">💾 حفظ فقط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== QUOTE ============================== -->
+  <div class="view" id="view-quote">
+    <div class="card">
+      <h2>عرض سعر جديد</h2>
+      <div class="grid cols-2">
+        <div class="field"><label>العميل — من القائمة</label>
+          <select id="qt-customerSelect"><option value="">— اسم يدوي بدون ربط بكشف حساب —</option></select>
+        </div>
+        <div class="field"><label>أو اسم يدوي</label><input type="text" id="qt-customerNameManual"></div>
+        <div class="field"><label>المشروع</label><input type="text" id="qt-project"></div>
+        <div class="field"><label>الموقع</label><input type="text" id="qt-location"></div>
+        <div class="field"><label>المرجع</label><input type="text" id="qt-ref"></div>
+        <div class="field"><label>التاريخ</label><input type="date" id="qt-date"></div>
+        <div class="field"><label>صالح حتى تاريخ</label><input type="date" id="qt-validUntil"></div>
+        <div class="field"><label>لغة المستند</label>
+          <select id="qt-lang"><option value="ar">عربي</option><option value="en">English</option></select>
+        </div>
+      </div>
+      <h3>بنود العرض</h3>
+      <div class="itemsHead"><div style="flex:1">البيان</div><div style="width:60px">الكمية</div><div style="width:80px">القيمة</div><div style="width:26px"></div></div>
+      <div id="qt-items"></div>
+      <button class="btn outline sm" id="qt-addItem" type="button">+ إضافة بند</button>
+      <div class="grid cols-2" style="margin-top:12px">
+        <div class="field"><label>أجرة أعمال (اختياري)</label><input type="number" step="0.01" id="qt-labor" value="0"></div>
+        <div class="field"><label>عنوان بند الأجرة</label><input type="text" id="qt-laborLabel" placeholder="أجرة أعمال..."></div>
+      </div>
+      <div class="msg info" id="qt-totalsPreview">الإجمالي: 0.00 $</div>
+      <div class="btnrow">
+        <button class="btn" id="qt-preview" type="button">👁 معاينة</button>
+        <button class="btn orange" id="qt-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn outline" id="qt-save" type="button">💾 حفظ فقط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== RECEIPT ============================== -->
+  <div class="view" id="view-receipt">
+    <div class="card">
+      <h2>إيصال قبض جديد</h2>
+      <div class="grid cols-2">
+        <div class="field"><label>العميل — من القائمة</label>
+          <select id="rec-customerSelect"><option value="">— اسم يدوي بدون ربط بكشف حساب —</option></select>
+        </div>
+        <div class="field"><label>أو اسم يدوي</label><input type="text" id="rec-customerNameManual"></div>
+        <div class="field"><label>المبلغ (USD)</label><input type="number" step="0.01" id="rec-amount"></div>
+        <div class="field"><label>طريقة الدفع</label>
+          <select id="rec-method">
+            <option value="cash">نقدًا</option><option value="check">شيك</option>
+            <option value="transfer">حوالة مصرفية</option><option value="other">أخرى</option>
+          </select>
+        </div>
+        <div class="field"><label>عن حساب / بيان</label><input type="text" id="rec-forDesc" placeholder="مثلاً: دفعة عن فاتورة INV-..."></div>
+        <div class="field"><label>التاريخ</label><input type="date" id="rec-date"></div>
+        <div class="field"><label>لغة المستند</label>
+          <select id="rec-lang"><option value="ar">عربي</option><option value="en">English</option></select>
+        </div>
+      </div>
+      <div class="btnrow">
+        <button class="btn" id="rec-preview" type="button">👁 معاينة</button>
+        <button class="btn orange" id="rec-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn outline" id="rec-save" type="button">💾 حفظ فقط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== DELIVERY ============================== -->
+  <div class="view" id="view-delivery">
+    <div class="card">
+      <h2>إذن تسليم جديد</h2>
+      <div class="grid cols-2">
+        <div class="field"><label>العميل / المستلِم — من القائمة</label>
+          <select id="dn-customerSelect"><option value="">— اسم يدوي بدون ربط بكشف حساب —</option></select>
+        </div>
+        <div class="field"><label>أو اسم يدوي</label><input type="text" id="dn-customerNameManual"></div>
+        <div class="field"><label>الموقع</label><input type="text" id="dn-location"></div>
+        <div class="field"><label>المسلِّم</label><input type="text" id="dn-deliveredBy"></div>
+        <div class="field"><label>رقم المركبة</label><input type="text" id="dn-vehicle"></div>
+        <div class="field"><label>التاريخ</label><input type="date" id="dn-date"></div>
+        <div class="field"><label>لغة المستند</label>
+          <select id="dn-lang"><option value="ar">عربي</option><option value="en">English</option></select>
+        </div>
+      </div>
+      <h3>البضائع المسلَّمة</h3>
+      <div class="itemsHead"><div style="flex:1">البيان</div><div style="width:70px">الكمية</div><div style="width:26px"></div></div>
+      <div id="dn-items"></div>
+      <button class="btn outline sm" id="dn-addItem" type="button">+ إضافة بند</button>
+      <div class="btnrow">
+        <button class="btn" id="dn-preview" type="button">👁 معاينة</button>
+        <button class="btn orange" id="dn-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn outline" id="dn-save" type="button">💾 حفظ فقط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== CERTIFICATE ============================== -->
+  <div class="view" id="view-cert">
+    <div class="card">
+      <h2>شهادة خبرة جديدة</h2>
+      <div class="grid cols-2">
+        <div class="field"><label>اسم الشخص</label><input type="text" id="cert-personName"></div>
+        <div class="field"><label>الصفة / الوظيفة</label><input type="text" id="cert-role" placeholder="فني تكييف، مهندس، عامل..."></div>
+        <div class="field"><label>من تاريخ</label><input type="date" id="cert-periodFrom"></div>
+        <div class="field"><label>إلى تاريخ</label><input type="date" id="cert-periodTo"></div>
+        <div class="field"><label>تاريخ الإصدار</label><input type="date" id="cert-date"></div>
+        <div class="field"><label>لغة المستند</label>
+          <select id="cert-lang"><option value="ar">عربي</option><option value="en">English</option></select>
+        </div>
+      </div>
+      <div class="field"><label>ملاحظات إضافية (اختياري)</label><textarea id="cert-extra"></textarea></div>
+      <div class="btnrow">
+        <button class="btn" id="cert-preview" type="button">👁 معاينة</button>
+        <button class="btn orange" id="cert-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn outline" id="cert-save" type="button">💾 حفظ فقط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== STATEMENT OF ACCOUNT ============================== -->
+  <div class="view" id="view-soa">
+    <div class="card">
+      <h2>كشف حساب زبون</h2>
+      <div class="grid cols-2">
+        <div class="field"><label>الزبون</label><select id="soa-customerSelect"></select></div>
+        <div class="field"><label>لغة المستند</label>
+          <select id="soa-lang"><option value="ar">عربي</option><option value="en">English</option></select>
+        </div>
+        <div class="field"><label>من تاريخ</label><input type="date" id="soa-periodFrom"></div>
+        <div class="field"><label>إلى تاريخ</label><input type="date" id="soa-periodTo"></div>
+      </div>
+      <div class="btnrow">
+        <button class="btn" id="soa-generate" type="button">📄 توليد الكشف</button>
+        <button class="btn orange" id="soa-print" type="button" disabled>🖨 طباعة / PDF</button>
+      </div>
+      <div id="soa-preview-note" class="hint" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h3>إضافة حركة يدوية على حساب الزبون (رصيد افتتاحي / تسوية)</h3>
+      <div class="grid cols-2">
+        <div class="field"><label>التاريخ</label><input type="date" id="soa-m-date"></div>
+        <div class="field"><label>البيان</label><input type="text" id="soa-m-desc"></div>
+        <div class="field"><label>مدين (عليه)</label><input type="number" step="0.01" id="soa-m-debit" value="0"></div>
+        <div class="field"><label>دائن (له)</label><input type="number" step="0.01" id="soa-m-credit" value="0"></div>
+      </div>
+      <button class="btn outline sm" id="soa-m-add" type="button">+ إضافة الحركة لحساب الزبون المحدد أعلاه</button>
+    </div>
+  </div>
+
+  <!-- ============================== AI ASSISTANT ============================== -->
+  <div class="view" id="view-ai">
+    <div class="card">
+      <h2>✨ اكتب واطلب — تحليل بالذكاء الاصطناعي</h2>
+      <p class="small">اكتب وصف الطلب، وارفع صورة أو أكثر للبضاعة/المواد المستخدمة، وحدّد نسبة الزيادة على السعر. المنصة تحلّل الصورة والنص وتقترح بنودًا وأسعارًا، ثم تحوّلها مباشرة إلى فاتورة قابلة للتعديل.</p>
+      <div class="field"><label>اكتب ما تريد</label>
+        <textarea id="ai-text" placeholder="مثلاً: تركيب وحدة تكييف سبليت 18000 مع تمديد نحاس وكهرباء..."></textarea>
+      </div>
+      <div class="field"><label>صور البضاعة/المواد</label>
+        <div class="uploadbox" id="ai-uploadbox">اضغط هنا أو اسحب الصور (يمكن اختيار أكثر من صورة)</div>
+        <input type="file" id="ai-images" accept="image/*" multiple style="display:none">
+        <div class="thumbrow" id="ai-thumbs"></div>
+      </div>
+      <div class="grid cols-2" style="max-width:460px">
+        <div class="field"><label>نسبة الزيادة على السعر (%)</label><input type="number" id="ai-markup" value="20"></div>
+        <div class="field"><label>لغة المستند</label>
+          <select id="ai-lang"><option value="ar">عربي</option><option value="en">English</option></select>
+        </div>
+      </div>
+      <div class="btnrow">
+        <button class="btn orange" id="ai-analyzeBtn" type="button">🔎 تحليل بالذكاء الاصطناعي</button>
+      </div>
+      <div id="ai-status"></div>
+    </div>
+
+    <div class="card" id="ai-resultCard" style="display:none">
+      <h3>البنود المقترحة (قابلة للتعديل)</h3>
+      <div class="itemsHead"><div style="flex:1">البيان</div><div style="width:55px">كمية</div><div style="width:65px">تكلفة</div><div style="width:65px">بيع</div><div style="width:26px"></div></div>
+      <div id="ai-itemsContainer"></div>
+      <div class="btnrow">
+        <button class="btn outline sm" id="ai-addItem" type="button">+ إضافة بند يدوي</button>
+        <button class="btn outline sm" id="ai-recalc" type="button">🔄 إعادة تطبيق نسبة الزيادة على الكل</button>
+      </div>
+
+      <h3>معلومات الفاتورة</h3>
+      <div class="grid cols-2">
+        <div class="field"><label>العميل — من القائمة</label>
+          <select id="ai-customerSelect"><option value="">— اسم يدوي بدون ربط بكشف حساب —</option></select>
+        </div>
+        <div class="field"><label>أو اسم يدوي</label><input type="text" id="ai-customerNameManual"></div>
+        <div class="field"><label>المشروع</label><input type="text" id="ai-project"></div>
+        <div class="field"><label>أجرة أعمال (اختياري)</label><input type="number" step="0.01" id="ai-labor" value="0"></div>
+      </div>
+      <div class="msg info" id="ai-totalsPreview">الإجمالي: 0.00 $</div>
+      <div class="btnrow">
+        <button class="btn orange" id="ai-issueBtn" type="button">🖨 إصدار الفاتورة وطباعتها</button>
+        <button class="btn outline" id="ai-issueSaveOnly" type="button">💾 حفظ الفاتورة فقط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== VERIFY ============================== -->
+  <div class="view" id="view-verify">
+    <div class="card">
+      <h2>التحقق من مستند</h2>
+      <p class="small">امسح/ارفع صورة رمز QR المطبوع على المستند، أو ألصق نص رمز التحقق يدويًا، للتأكد أن المستند صادر عن iCOOL ولم يُعدَّل بعد إصداره.</p>
+      <div class="field"><label>رفع صورة تحتوي رمز QR</label>
+        <input type="file" id="verify-file" accept="image/*">
+      </div>
+      <div class="field"><label>أو ألصق نص رمز التحقق يدويًا</label>
+        <textarea id="verify-paste" placeholder="ICL1|invoice|INV-...|2026-08-18|...|...|..."></textarea>
+      </div>
+      <div class="btnrow"><button class="btn" id="verify-btn" type="button">🔍 تحقق الآن</button></div>
+      <div id="verify-result" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- ============================== CUSTOMERS ============================== -->
+  <div class="view" id="view-customers">
+    <div class="card">
+      <h2>إضافة زبون</h2>
+      <div class="grid cols-2">
+        <div class="field"><label>الاسم</label><input type="text" id="cust-name"></div>
+        <div class="field"><label>الهاتف</label><input type="text" id="cust-phone"></div>
+        <div class="field" style="grid-column:1/-1"><label>العنوان</label><input type="text" id="cust-address"></div>
+      </div>
+      <button class="btn" id="cust-add" type="button">+ إضافة الزبون</button>
+    </div>
+    <div class="card">
+      <h2>قائمة الزبائن</h2>
+      <table class="list"><thead><tr><th>الاسم</th><th>الهاتف</th><th>الرصيد المستحق</th><th></th></tr></thead>
+      <tbody id="cust-list"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ============================== ARCHIVE ============================== -->
+  <div class="view" id="view-archive">
+    <div class="card">
+      <h2>أرشيف المستندات الصادرة</h2>
+      <table class="list"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th><th>الجهة</th><th>القيمة</th><th></th></tr></thead>
+      <tbody id="archive-list"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ============================== SETTINGS ============================== -->
+  <div class="view" id="view-settings">
+    <div class="card">
+      <h2>نسخة احتياطية</h2>
+      <p class="small">كل بياناتك (الزبائن، كشوف الحساب، المستندات، مفتاح التحقق) محفوظة محليًا على هذا الجهاز فقط. خذ نسخة احتياطية بانتظام واحتفظ بها بمكان آمن (بريدك، درايف...)، وإلا ستُفقد البيانات إذا مُسحت بيانات المتصفح أو تغيّر الجهاز.</p>
+      <div class="btnrow">
+        <button class="btn orange" id="settings-export" type="button">⬇️ تنزيل نسخة احتياطية</button>
+        <label class="btn outline" style="cursor:pointer">⬆️ استيراد نسخة احتياطية
+          <input type="file" id="settings-import" accept=".json" style="display:none">
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <h2>مفتاح التوثيق (سري)</h2>
+      <p class="small">هذا المفتاح يُستخدم لتوقيع كل مستند صادر ولإثبات عدم تزويره لاحقًا. لا تشاركه مع أي شخص. إذا تغيّر أو فُقد، ستفشل عملية التحقق من المستندات القديمة.</p>
+      <div class="btnrow">
+        <button class="btn outline sm" id="settings-revealSecret" type="button">👁 إظهار المفتاح</button>
+      </div>
+      <div class="mono small" id="settings-secretBox" style="margin-top:8px;word-break:break-all"></div>
+    </div>
+    <div class="card">
+      <h2>منطقة الخطر</h2>
+      <button class="btn danger" id="settings-wipe" type="button">🗑 حذف كل البيانات المحلية</button>
+    </div>
+  </div>
+
+  <footer class="appfoot">iCOOL Trading &amp; Contracting — Jiyyeh, Lebanon — تخزين محلي بالكامل، بدون سيرفر مركزي للبيانات</footer>
+</div>
+
+<div id="printArea"></div>
+<div id="previewBar" class="previewbar">
+  <button id="previewClose" class="btn outline sm" type="button">✖ إغلاق</button>
+  <button id="previewPrintBtn" class="btn orange sm" type="button">🖨 طباعة / PDF (يحفظ في الأرشيف)</button>
+</div>
+<div id="toastHost"></div>
+
+<script src="vendor_qrcode.js"></script>
+<script src="vendor_jsqr.js"></script>
+<script src="i18n.js"></script>
+<script src="store.js"></script>
+<script src="render.js"></script>
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>

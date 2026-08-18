@@ -1,0 +1,17 @@
+{
+  "name": "iCOOL Documents Platform",
+  "short_name": "iCOOL Docs",
+  "description": "منصة iCOOL لإصدار الفواتير وكشوف الحساب والإيصالات وسائر المستندات الرسمية، موثّقة برمز تحقق.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef2f7",
+  "theme_color": "#14406e",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
