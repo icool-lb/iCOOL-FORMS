@@ -7,6 +7,7 @@ const DB_KEYS = {
   ledger: 'icool_ledger_v1',
   docs: 'icool_docs_v1',
   seq: 'icool_seq_v1',
+  materials: 'icool_materials_v1',
   settings: 'icool_settings_v1',
 };
 
@@ -23,6 +24,7 @@ const Store = {
   ledger: loadJSON(DB_KEYS.ledger, []),      // {id, customerId, date, type, ref, desc, debit, credit}
   docs: loadJSON(DB_KEYS.docs, []),          // {id, type, no, dateISO, customerId, customerName, payload, totalUsd, sig, createdAt, lang}
   seq: loadJSON(DB_KEYS.seq, {}),
+  materials: loadJSON(DB_KEYS.materials, []), // {id, name, unitPrice, updatedAt}
   settings: loadJSON(DB_KEYS.settings, { company: 'iCOOL Trading & Contracting' }),
 
   persist(){
@@ -30,6 +32,7 @@ const Store = {
     saveJSON(DB_KEYS.ledger, this.ledger);
     saveJSON(DB_KEYS.docs, this.docs);
     saveJSON(DB_KEYS.seq, this.seq);
+    saveJSON(DB_KEYS.materials, this.materials);
     saveJSON(DB_KEYS.settings, this.settings);
   },
 
@@ -52,6 +55,40 @@ const Store = {
     return c;
   },
   getCustomer(id){ return this.customers.find(c=>c.id===id); },
+  findCustomerByName(name){
+    const norm = String(name||'').trim().toLowerCase();
+    if (!norm) return null;
+    return this.customers.find(c=> String(c.name||'').trim().toLowerCase() === norm) || null;
+  },
+  resolveOrCreateCustomer(name){
+    const existing = this.findCustomerByName(name);
+    if (existing) return existing.id;
+    const created = this.addCustomer({ name: String(name).trim() });
+    return created.id;
+  },
+
+  upsertMaterial(name, unitPrice){
+    name = String(name||'').trim();
+    unitPrice = Number(unitPrice) || 0;
+    if (!name || unitPrice <= 0) return;
+    const norm = name.toLowerCase();
+    const existing = this.materials.find(m=> String(m.name||'').trim().toLowerCase() === norm);
+    if (existing){
+      existing.unitPrice = unitPrice;
+      existing.updatedAt = new Date().toISOString();
+    } else {
+      this.materials.push({ id:this.uid(), name, unitPrice, updatedAt:new Date().toISOString() });
+    }
+    this.persist();
+  },
+  materialsSorted(){
+    return this.materials.slice().sort((a,b)=> (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  },
+  findMaterialByName(name){
+    const norm = String(name||'').trim().toLowerCase();
+    if (!norm) return null;
+    return this.materials.find(m=> String(m.name||'').trim().toLowerCase() === norm) || null;
+  },
 
   addLedgerEntry(e){
     e.id = this.uid();
@@ -73,6 +110,21 @@ const Store = {
     this.persist();
     return doc;
   },
+  updateDoc(id, patch){
+    const idx = this.docs.findIndex(d=>d.id===id);
+    if (idx === -1) return null;
+    const original = this.docs[idx];
+    const updated = Object.assign({}, patch, {
+      id: original.id, createdAt: original.createdAt, editedAt: new Date().toISOString(),
+    });
+    this.docs[idx] = updated;
+    this.persist();
+    return updated;
+  },
+  removeLedgerEntriesByRef(ref){
+    this.ledger = this.ledger.filter(e=>e.ref!==ref);
+    this.persist();
+  },
   allDocs(){ return this.docs.slice().sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||'')); },
   findDocByNo(no){ return this.docs.find(d=>d.no===no); },
 
@@ -85,6 +137,7 @@ const Store = {
       ledger: this.ledger,
       docs: this.docs,
       seq: this.seq,
+      materials: this.materials,
       settings: this.settings,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -101,6 +154,7 @@ const Store = {
     this.ledger = obj.ledger || [];
     this.docs = obj.docs || [];
     this.seq = obj.seq || {};
+    this.materials = obj.materials || [];
     this.settings = obj.settings || this.settings;
     this.persist();
   },

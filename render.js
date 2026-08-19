@@ -137,6 +137,12 @@ function amountToWords(amountUsd, lang){
 }
 
 // ---------------- QR rendering ------------------------------------------
+// The vendored qrcode-generator library defaults to a naive Latin1 byte
+// conversion that corrupts any non-ASCII text (Arabic customer names, etc).
+// It ships a proper UTF-8 encoder too — just not enabled by default.
+if (typeof qrcode !== 'undefined' && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']){
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+}
 function renderQrInto(containerEl, text){
   containerEl.innerHTML = '';
   try{

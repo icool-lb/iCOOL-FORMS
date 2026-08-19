@@ -10,6 +10,7 @@ function todayISOApp(){ return new Date().toISOString().slice(0,10); }
 function showToast(msg, type){
   type = type || 'info';
   const host = document.getElementById('toastHost');
+  host.innerHTML = ''; // one toast at a time — avoids stacking over banners/forms
   const el = document.createElement('div');
   el.className = 'toast ' + type;
   el.textContent = msg;
@@ -33,12 +34,229 @@ function switchTab(view){
 
 // ---------------- preview overlay ---------------------------------------
 function openPreviewOverlay(html, qrId, qrPayload, printTargetBtnId){
-  document.getElementById('printArea').innerHTML = html;
+  const printArea = document.getElementById('printArea');
+  printArea.innerHTML = '<div class="preview-stage"><div class="preview-scaler">' + html + '</div></div>';
   renderQrInto(document.getElementById('qr-' + qrId), qrPayload);
   document.body.classList.add('show-preview');
   window._previewTargetBtn = printTargetBtnId || null;
+  window._previewPrintAction = null;
+  document.getElementById('previewPrintBtn').textContent = '🖨 طباعة / PDF (يحفظ في الأرشيف)';
+  requestAnimationFrame(fitPreviewScale);
 }
 function closePreviewOverlay(){ document.body.classList.remove('show-preview'); }
+
+// Scales the fixed-width (794px, print-accurate) document down to fit the
+// current viewport for on-screen preview only. Printing/PDF export always
+// uses the raw unscaled markup, injected separately without this wrapper.
+function fitPreviewScale(){
+  const stage = document.querySelector('#printArea .preview-stage');
+  const scaler = document.querySelector('#printArea .preview-scaler');
+  if (!stage || !scaler) return;
+  const docwrap = scaler.querySelector('.docwrap');
+  if (!docwrap) return;
+  const availW = Math.max(260, Math.min(794, window.innerWidth - 24));
+  const scale = availW / 794;
+  const naturalHeight = docwrap.offsetHeight;
+  scaler.style.transform = 'scale(' + scale + ')';
+  stage.style.width = availW + 'px';
+  stage.style.height = Math.ceil(naturalHeight * scale) + 'px';
+}
+window.addEventListener('resize', function(){
+  if (document.body.classList.contains('show-preview')) fitPreviewScale();
+});
+
+// ---------------- clean PDF export + native share (WhatsApp, etc.) ---------
+// Renders the current document to a real PDF file entirely client-side
+// (html2canvas + jsPDF), with NO browser print chrome — unlike the native
+// "Print > Save PDF" flow, this never adds a page URL/title footer, and the
+// resulting file can be handed straight to the iOS share sheet so the user
+// can pick WhatsApp directly.
+async function generateCleanPdfBlob(){
+  const liveDocwrap = document.querySelector('#printArea .docwrap');
+  if (!liveDocwrap) throw new Error('لا يوجد مستند جاهز للتصدير');
+
+  const clone = liveDocwrap.cloneNode(true);
+  // html2canvas can't reliably rasterize a live <canvas> (the QR code) —
+  // swap it for a plain <img> snapshot before capture.
+  const liveCanvases = liveDocwrap.querySelectorAll('canvas');
+  const cloneCanvases = clone.querySelectorAll('canvas');
+  cloneCanvases.forEach((c, i)=>{
+    const live = liveCanvases[i];
+    if (!live) return;
+    const img = document.createElement('img');
+    img.src = live.toDataURL('image/png');
+    img.style.width = live.style.width || (live.width + 'px');
+    img.style.height = live.style.height || (live.height + 'px');
+    c.replaceWith(img);
+  });
+
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:fixed;left:-99999px;top:0;background:#ffffff;';
+  clone.style.margin = '0';
+  stage.appendChild(clone);
+  document.body.appendChild(stage);
+
+  let blob;
+  try{
+    const canvas = await html2canvas(clone, { scale:2, useCORS:true, backgroundColor:'#ffffff' });
+    const cssWidth = clone.offsetWidth;
+    const cssHeight = clone.offsetHeight;
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:'px', format:[cssWidth, cssHeight], hotfixes:['px_scaling'] });
+    pdf.addImage(imgData, 'JPEG', 0, 0, cssWidth, cssHeight);
+    blob = pdf.output('blob');
+  } finally {
+    document.body.removeChild(stage);
+  }
+  return blob;
+}
+
+async function sharePdfBlob(filename, blob){
+  try{
+    const file = new File([blob], filename, { type:'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })){
+      await navigator.share({ files:[file], title:filename });
+      return 'shared';
+    }
+  }catch(err){
+    if (err && err.name === 'AbortError') return 'cancelled';
+    console.error('share failed, falling back to download', err);
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  return 'downloaded';
+}
+
+async function shareCurrentDocument(no){
+  try{
+    showToast('جارِ تجهيز PDF للمشاركة...', 'info');
+    const blob = await generateCleanPdfBlob();
+    const result = await sharePdfBlob((no || 'icool-document') + '.pdf', blob);
+    if (result === 'downloaded') showToast('تم تنزيل PDF — يمكنك مشاركته من تطبيق الملفات', 'ok');
+    else if (result === 'shared') showToast('تم فتح قائمة المشاركة', 'ok');
+  }catch(err){
+    console.error(err);
+    showToast('تعذّر إنشاء PDF: ' + err.message, 'err');
+  }
+}
+
+// ---------------- edit-issued-document mode --------------------------------
+let editState = null; // { type, docId, no }
+function editBannerHtml(no){
+  return '🖊 وضع تعديل المستند رقم <b class="mono">' + no + '</b> — الحفظ سيُحدّث نفس المستند بنفس الرقم بدل إصدار رقم جديد.' +
+    ' <button type="button" class="btn outline sm" id="editBannerCancel" style="margin-inline-start:8px">إلغاء التعديل</button>';
+}
+function showEditBanner(viewId, no){
+  let banner = document.getElementById('editBanner');
+  if (!banner){
+    banner = document.createElement('div');
+    banner.id = 'editBanner';
+    banner.className = 'msg info';
+  }
+  banner.innerHTML = editBannerHtml(no);
+  const view = document.getElementById('view-' + viewId);
+  view.insertBefore(banner, view.firstChild);
+  document.getElementById('editBannerCancel').addEventListener('click', function(){
+    exitEditMode();
+    clearFormFor(viewId);
+    showToast('تم إلغاء التعديل', 'info');
+  });
+}
+function exitEditMode(){
+  editState = null;
+  const banner = document.getElementById('editBanner');
+  if (banner) banner.remove();
+}
+function clearFormFor(viewId){
+  const map = {
+    invoice: ()=>clearInvoiceLikeForm('inv'), quote: ()=>clearInvoiceLikeForm('qt'),
+    receipt: clearReceiptForm, delivery: clearDeliveryForm, cert: clearCertForm,
+  };
+  if (map[viewId]) map[viewId]();
+}
+function editOptsFor(type, prefix){
+  if (editState && editState.type === type){
+    return { editDocId: editState.docId, editNo: editState.no };
+  }
+  return {};
+}
+
+function populateInvoiceLikeForm(prefix, doc){
+  const sel = document.getElementById(prefix + '-customerSelect');
+  const manual = document.getElementById(prefix + '-customerNameManual');
+  if (doc.customerId && Store.getCustomer(doc.customerId)){ sel.value = doc.customerId; manual.value = ''; }
+  else { sel.value = ''; manual.value = doc.customerName || ''; }
+  const setVal = (id,v)=>{ const el=document.getElementById(id); if (el) el.value = v||''; };
+  setVal(prefix + '-project', doc.payload.project);
+  setVal(prefix + '-location', doc.payload.location);
+  setVal(prefix + '-ref', doc.payload.ref);
+  setVal(prefix + '-date', doc.dateISO);
+  setVal(prefix + '-lang', doc.lang);
+  const itemsHost = document.getElementById(prefix + '-items');
+  itemsHost.innerHTML = '';
+  (doc.payload.items || []).forEach(it=>addStdItemRow(prefix + '-items', it));
+  if ((doc.payload.items||[]).length === 0) addStdItemRow(prefix + '-items');
+  setVal(prefix + '-labor', doc.payload.labor || 0);
+  const laborLabelEl = document.getElementById(prefix + '-laborLabel'); if (laborLabelEl) laborLabelEl.value = doc.payload.laborLabel || '';
+  const paidEl = document.getElementById(prefix + '-paidPrev'); if (paidEl) paidEl.value = doc.payload.paidPrev || 0;
+  const validEl = document.getElementById(prefix + '-validUntil'); if (validEl) validEl.value = doc.payload.validUntil || '';
+}
+function populateReceiptForm(doc){
+  const sel = document.getElementById('rec-customerSelect');
+  const manual = document.getElementById('rec-customerNameManual');
+  if (doc.customerId && Store.getCustomer(doc.customerId)){ sel.value = doc.customerId; manual.value = ''; }
+  else { sel.value = ''; manual.value = doc.customerName || ''; }
+  document.getElementById('rec-amount').value = doc.totalUsd;
+  document.getElementById('rec-method').value = doc.payload.method || 'cash';
+  document.getElementById('rec-forDesc').value = doc.payload.forDesc || '';
+  document.getElementById('rec-date').value = doc.dateISO;
+  document.getElementById('rec-lang').value = doc.lang;
+}
+function populateDeliveryForm(doc){
+  const sel = document.getElementById('dn-customerSelect');
+  const manual = document.getElementById('dn-customerNameManual');
+  if (doc.customerId && Store.getCustomer(doc.customerId)){ sel.value = doc.customerId; manual.value = ''; }
+  else { sel.value = ''; manual.value = doc.customerName || ''; }
+  document.getElementById('dn-location').value = doc.payload.location || '';
+  document.getElementById('dn-vehicle').value = doc.payload.vehicle || '';
+  document.getElementById('dn-deliveredBy').value = doc.payload.deliveredBy || '';
+  document.getElementById('dn-date').value = doc.dateISO;
+  document.getElementById('dn-lang').value = doc.lang;
+  const itemsHost = document.getElementById('dn-items');
+  itemsHost.innerHTML = '';
+  (doc.payload.items || []).forEach(it=>addDnItemRow('dn-items', it));
+  if ((doc.payload.items||[]).length === 0) addDnItemRow('dn-items');
+}
+function populateCertForm(doc){
+  document.getElementById('cert-personName').value = doc.payload.personName || '';
+  document.getElementById('cert-role').value = doc.payload.role || '';
+  document.getElementById('cert-periodFrom').value = doc.payload.from || '';
+  document.getElementById('cert-periodTo').value = doc.payload.to || '';
+  document.getElementById('cert-extra').value = doc.payload.extra || '';
+  document.getElementById('cert-date').value = doc.dateISO;
+  document.getElementById('cert-lang').value = doc.lang;
+}
+
+function startEditDoc(docId){
+  const doc = Store.docs.find(d=>d.id===docId);
+  if (!doc){ showToast('لم يتم العثور على المستند', 'err'); return; }
+  const viewMap = { invoice:'invoice', quote:'quote', receipt:'receipt', delivery:'delivery', cert:'cert' };
+  const viewId = viewMap[doc.type];
+  if (!viewId){ showToast('هذا النوع من المستندات لا يدعم التعديل المباشر', 'err'); return; }
+  if (doc.type === 'invoice') populateInvoiceLikeForm('inv', doc);
+  else if (doc.type === 'quote') populateInvoiceLikeForm('qt', doc);
+  else if (doc.type === 'receipt') populateReceiptForm(doc);
+  else if (doc.type === 'delivery') populateDeliveryForm(doc);
+  else if (doc.type === 'cert') populateCertForm(doc);
+  editState = { type: doc.type, docId: doc.id, no: doc.no };
+  switchTab(viewId);
+  showEditBanner(viewId, doc.no);
+  showToast('تم تحميل المستند للتعديل', 'info');
+}
 
 // ---------------- generic item-row widgets -------------------------------
 function addStdItemRow(containerId, item){
@@ -46,7 +264,7 @@ function addStdItemRow(containerId, item){
   const row = document.createElement('div');
   row.className = 'rowline';
   row.innerHTML =
-    '<input type="text" class="it-name" placeholder="اسم البند" value="' + escAttr(item.name) + '">' +
+    '<input type="text" class="it-name" list="materialsDatalist" placeholder="اسم البند (يقترح من المواد المحفوظة)" value="' + escAttr(item.name) + '">' +
     '<div class="rowline-nums">' +
       '<div class="numcol"><span class="numlabel">الكمية</span><input type="number" step="0.01" class="it-qty" value="' + item.qty + '"></div>' +
       '<div class="numcol"><span class="numlabel">السعر المفرد</span><input type="number" step="0.01" class="it-price" value="' + (item.unitPrice!=null?item.unitPrice:0) + '"></div>' +
@@ -54,6 +272,7 @@ function addStdItemRow(containerId, item){
       '<button type="button" class="btn danger sm it-remove" style="padding:6px 8px;align-self:flex-end">×</button>' +
     '</div>';
   document.getElementById(containerId).appendChild(row);
+  const nameEl = row.querySelector('.it-name');
   const qtyEl = row.querySelector('.it-qty');
   const priceEl = row.querySelector('.it-price');
   const valueEl = row.querySelector('.it-value');
@@ -64,6 +283,17 @@ function addStdItemRow(containerId, item){
   }
   qtyEl.addEventListener('input', recalcLine);
   priceEl.addEventListener('input', recalcLine);
+  nameEl.addEventListener('input', function(){
+    // Auto-fill the unit price from the saved materials catalog when the
+    // typed name matches a known material and no price was entered yet.
+    const currentPrice = parseFloat(priceEl.value || 0) || 0;
+    if (currentPrice > 0) return;
+    const match = Store.findMaterialByName(nameEl.value);
+    if (match){
+      priceEl.value = match.unitPrice;
+      recalcLine();
+    }
+  });
   row.querySelector('.it-remove').onclick = function(){
     row.remove();
     document.getElementById(containerId).dispatchEvent(new Event('input'));
@@ -318,23 +548,53 @@ function clearAiForm(){
 
 // ---------------- generic finalize / preview flows -------------------------
 async function finalizeAndOutput(opts){
-  // opts: { prefix, gatherFn, renderFn, langFn, onSaved, clearFn, doPrint }
+  // opts: { prefix, gatherFn, renderFn, langFn, onSaved, clearFn, doPrint, editDocId, editNo }
   try{
     const data = opts.gatherFn();
     if (data.__error){ showToast(data.__error, 'err'); return; }
-    data.no = Store.nextNo(opts.prefix);
+
+    // Auto-save a manually-typed customer name as a real customer record so
+    // it's remembered (dropdown + ledger tracking) for next time.
+    if (!data.customerId && data.customerName){
+      data.customerId = Store.resolveOrCreateCustomer(data.customerName);
+    }
+
+    if (opts.editDocId){
+      data.no = opts.editNo;
+      // an edited document keeps its original number but its content —
+      // and therefore its verification signature — reflects the correction.
+      Store.removeLedgerEntriesByRef(data.no);
+    } else {
+      data.no = Store.nextNo(opts.prefix);
+    }
     data.dateISO = data.dateISO || todayISOApp();
     const lang = opts.langFn ? opts.langFn() : 'ar';
     const result = await opts.renderFn(data, lang);
-    const saved = Store.saveDoc(result.doc);
+
+    let saved;
+    if (opts.editDocId){
+      result.doc.editedAt = new Date().toISOString();
+      saved = Store.updateDoc(opts.editDocId, result.doc);
+    } else {
+      saved = Store.saveDoc(result.doc);
+    }
     if (opts.onSaved) opts.onSaved(saved, data);
+
+    // Remember material name+price combos entered on this document for the
+    // quick-fill dropdown on future documents.
+    if (Array.isArray(data.items)){
+      data.items.forEach(it=>{ if (it.name && it.unitPrice) Store.upsertMaterial(it.name, it.unitPrice); });
+    }
+
     closePreviewOverlay();
     document.getElementById('printArea').innerHTML = result.html;
     renderQrInto(document.getElementById('qr-' + result.qrId), result.qrPayload);
     refreshAllDynamicViews();
-    showToast('تم الحفظ في الأرشيف: ' + data.no, 'ok');
-    if (opts.doPrint) setTimeout(()=>window.print(), 80);
+    showToast((opts.editDocId ? 'تم حفظ التعديل: ' : 'تم الحفظ في الأرشيف: ') + data.no, 'ok');
+    if (opts.doPrint === true) setTimeout(()=>window.print(), 80);
+    else if (opts.doPrint === 'share') shareCurrentDocument(data.no);
     if (opts.clearFn) opts.clearFn();
+    if (opts.editDocId) exitEditMode();
   }catch(err){
     console.error(err);
     showToast('حدث خطأ: ' + err.message, 'err');
@@ -373,22 +633,35 @@ async function soaGenerate(){
   const result = await renderSOA(Object.assign({}, soaDraft, { no: 'SOA-DRAFT' }), lang);
   openPreviewOverlay(result.html, result.qrId, result.qrPayload, 'soa-print');
   document.getElementById('soa-print').disabled = false;
+  document.getElementById('soa-share').disabled = false;
   document.getElementById('soa-preview-note').textContent = 'تمت المعاينة — اضغط زر الطباعة لإصدار الكشف رسميًا وحفظه في الأرشيف.';
 }
-async function soaPrint(){
-  if (!soaDraft){ showToast('ولّد الكشف أولاً', 'err'); return; }
+async function finalizeSoa(){
+  if (!soaDraft) return null;
   const lang = valOf('soa-lang');
   soaDraft.no = Store.nextNo('SOA');
   const result = await renderSOA(soaDraft, lang);
-  const saved = Store.saveDoc(result.doc);
+  Store.saveDoc(result.doc);
   closePreviewOverlay();
   document.getElementById('printArea').innerHTML = result.html;
   renderQrInto(document.getElementById('qr-' + result.qrId), result.qrPayload);
   showToast('تم حفظ الكشف: ' + soaDraft.no, 'ok');
-  setTimeout(()=>window.print(), 80);
   document.getElementById('soa-print').disabled = true;
+  document.getElementById('soa-share').disabled = true;
+  const no = soaDraft.no;
   soaDraft = null;
   refreshAllDynamicViews();
+  return no;
+}
+async function soaPrint(){
+  if (!soaDraft){ showToast('ولّد الكشف أولاً', 'err'); return; }
+  const no = await finalizeSoa();
+  if (no) setTimeout(()=>window.print(), 80);
+}
+async function soaShare(){
+  if (!soaDraft){ showToast('ولّد الكشف أولاً', 'err'); return; }
+  const no = await finalizeSoa();
+  if (no) shareCurrentDocument(no);
 }
 function soaAddManualEntry(){
   const custId = valOf('soa-customerSelect');
@@ -407,11 +680,8 @@ function soaAddManualEntry(){
 }
 
 // ---------------- reprint from archive --------------------------------------
-async function reprintDoc(docId){
-  const doc = Store.docs.find(d=>d.id===docId);
-  if (!doc){ showToast('لم يتم العثور على المستند', 'err'); return; }
+async function rebuildResultFromDoc(doc){
   const lang = doc.lang || 'ar';
-  let result;
   if (doc.type === 'invoice' || doc.type === 'quote'){
     const data = {
       no: doc.no, dateISO: doc.dateISO, customerId: doc.customerId, customerName: doc.customerName,
@@ -419,37 +689,64 @@ async function reprintDoc(docId){
       paidPrev: doc.payload.paidPrev, project: doc.payload.project, location: doc.payload.location,
       ref: doc.payload.ref, validUntil: doc.payload.validUntil,
     };
-    result = await renderInvoiceLike(doc.type, data, lang);
+    return renderInvoiceLike(doc.type, data, lang);
   } else if (doc.type === 'receipt'){
-    result = await renderReceipt({
+    return renderReceipt({
       no: doc.no, dateISO: doc.dateISO, customerId: doc.customerId, customerName: doc.customerName,
       amount: doc.totalUsd, method: doc.payload.method, forDesc: doc.payload.forDesc,
     }, lang);
   } else if (doc.type === 'delivery'){
-    result = await renderDelivery({
+    return renderDelivery({
       no: doc.no, dateISO: doc.dateISO, customerId: doc.customerId, customerName: doc.customerName,
       items: doc.payload.items, vehicle: doc.payload.vehicle, deliveredBy: doc.payload.deliveredBy,
       location: doc.payload.location,
     }, lang);
   } else if (doc.type === 'cert'){
-    result = await renderCert({
+    return renderCert({
       no: doc.no, dateISO: doc.dateISO, personName: doc.payload.personName, role: doc.payload.role,
       periodFrom: doc.payload.from, periodTo: doc.payload.to, extra: doc.payload.extra,
     }, lang);
   } else if (doc.type === 'soa'){
-    result = await renderSOA({
+    return renderSOA({
       no: doc.no, dateISO: doc.dateISO, customerId: doc.customerId, customerName: doc.customerName,
       entries: doc.payload.entries, opening: doc.payload.opening,
       periodFrom: doc.payload.periodFrom, periodTo: doc.payload.periodTo,
     }, lang);
   }
+  return null;
+}
+
+async function reprintDoc(docId){
+  const doc = Store.docs.find(d=>d.id===docId);
+  if (!doc){ showToast('لم يتم العثور على المستند', 'err'); return; }
+  const result = await rebuildResultFromDoc(doc);
+  if (!result) return;
+  const printArea = document.getElementById('printArea');
+  printArea.innerHTML = '<div class="preview-stage"><div class="preview-scaler">' + result.html + '</div></div>';
+  renderQrInto(document.getElementById('qr-' + result.qrId), result.qrPayload);
+  document.body.classList.add('show-preview');
+  requestAnimationFrame(fitPreviewScale);
+  window._previewTargetBtn = null;
+  document.getElementById('previewPrintBtn').textContent = '🖨 طباعة نسخة';
+  window._previewPrintAction = function(){
+    // Re-inject the RAW (unscaled, unwrapped) markup right before printing —
+    // the preview wrapper above is for on-screen fit only and must never
+    // reach the print/PDF output.
+    document.getElementById('printArea').innerHTML = result.html;
+    renderQrInto(document.getElementById('qr-' + result.qrId), result.qrPayload);
+    setTimeout(()=>window.print(), 60);
+  };
+}
+
+// Renders an archived document straight into #printArea (no on-screen
+// overlay) so it can be handed to the PDF/share pipeline directly.
+async function reprintDocSilently(docId){
+  const doc = Store.docs.find(d=>d.id===docId);
+  if (!doc) return;
+  const result = await rebuildResultFromDoc(doc);
   if (!result) return;
   document.getElementById('printArea').innerHTML = result.html;
   renderQrInto(document.getElementById('qr-' + result.qrId), result.qrPayload);
-  document.body.classList.add('show-preview');
-  window._previewTargetBtn = null;
-  document.getElementById('previewPrintBtn').textContent = '🖨 طباعة نسخة';
-  document.getElementById('previewPrintBtn').onclick = function(){ closePreviewOverlay(); setTimeout(()=>window.print(), 60); };
 }
 
 // ---------------- customers tab -----------------------------------------
@@ -480,19 +777,39 @@ function renderArchiveList(){
   const tbody = document.getElementById('archive-list');
   if (!tbody) return;
   const docs = Store.allDocs();
+  const editableTypes = { invoice:1, quote:1, receipt:1, delivery:1, cert:1 };
   tbody.innerHTML = docs.map(d=>{
+    const editBtn = editableTypes[d.type]
+      ? '<button class="btn outline sm" data-edit="' + d.id + '" title="تعديل">✏️</button>' : '';
+    const editedTag = d.editedAt ? ' <span class="badge info" style="margin-inline-start:4px">مُعدَّل</span>' : '';
     return '<tr>' +
       '<td>' + (TYPE_LABELS_AR[d.type]||d.type) + '</td>' +
-      '<td class="mono">' + d.no + '</td>' +
+      '<td class="mono">' + d.no + editedTag + '</td>' +
       '<td>' + (d.dateISO||'-') + '</td>' +
       '<td>' + escAttr(d.customerName||'-') + '</td>' +
       '<td>' + Number(d.totalUsd||0).toFixed(2) + '</td>' +
-      '<td><button class="btn outline sm" data-reprint="' + d.id + '">🖨</button></td>' +
+      '<td style="white-space:nowrap">' +
+        '<button class="btn outline sm" data-reprint="' + d.id + '" title="طباعة">🖨</button> ' +
+        '<button class="btn outline sm" data-share="' + d.id + '" title="مشاركة" style="color:#1a8a5a;border-color:#1a8a5a">📤</button> ' +
+        editBtn +
+      '</td>' +
       '</tr>';
   }).join('') || '<tr><td colspan="6" class="small">لا يوجد مستندات مُصدرة بعد</td></tr>';
   tbody.querySelectorAll('[data-reprint]').forEach(btn=>{
     btn.onclick = function(){ reprintDoc(btn.getAttribute('data-reprint')); };
   });
+  tbody.querySelectorAll('[data-share]').forEach(btn=>{
+    btn.onclick = function(){ shareArchivedDoc(btn.getAttribute('data-share')); };
+  });
+  tbody.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.onclick = function(){ startEditDoc(btn.getAttribute('data-edit')); };
+  });
+}
+async function shareArchivedDoc(docId){
+  const doc = Store.docs.find(d=>d.id===docId);
+  if (!doc){ showToast('لم يتم العثور على المستند', 'err'); return; }
+  await reprintDocSilently(docId);
+  shareCurrentDocument(doc.no);
 }
 
 // ---------------- home stats ---------------------------------------------
@@ -511,11 +828,20 @@ function statCard(value, label){
     '<div class="small">' + label + '</div></div>';
 }
 
+function refreshMaterialsDatalist(){
+  const dl = document.getElementById('materialsDatalist');
+  if (!dl) return;
+  dl.innerHTML = Store.materialsSorted().map(m=>
+    '<option value="' + escAttr(m.name) + '" label="' + escAttr(m.name) + ' — ' + m.unitPrice.toFixed(2) + '$"></option>'
+  ).join('');
+}
+
 function refreshAllDynamicViews(){
   refreshCustomerSelects();
   renderCustomersList();
   renderArchiveList();
   updateHomeStats();
+  refreshMaterialsDatalist();
 }
 
 // ---------------- verify tab -----------------------------------------------
@@ -607,6 +933,31 @@ function fileToBase64(file){
     reader.readAsDataURL(file);
   });
 }
+
+// Renders up to MAX_PDF_PAGES of an uploaded PDF (a supplier quote/invoice,
+// for example) to images client-side, so they can feed the exact same AI
+// vision pipeline used for photos — no server-side PDF handling needed.
+const MAX_PDF_PAGES = 4;
+async function pdfFileToImages(file){
+  if (typeof pdfjsLib === 'undefined') throw new Error('مكتبة قراءة PDF لم تُحمَّل');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor_pdfjs.worker.js';
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  const results = [];
+  for (let i = 1; i <= pageCount; i++){
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    results.push({ dataUrl, base64: dataUrl.split(',')[1], mediaType: 'image/jpeg' });
+  }
+  return results;
+}
 function setAiStatus(msg, loading, type){
   const el = document.getElementById('ai-status');
   if (!msg){ el.innerHTML = ''; return; }
@@ -689,10 +1040,13 @@ document.addEventListener('DOMContentLoaded', function(){
   });
   document.getElementById('previewClose').addEventListener('click', closePreviewOverlay);
   document.getElementById('previewPrintBtn').addEventListener('click', function(){
+    const action = window._previewPrintAction;
     const id = window._previewTargetBtn;
     closePreviewOverlay();
-    if (id){ const b = document.getElementById(id); if (b) b.click(); }
+    if (typeof action === 'function'){ action(); }
+    else if (id){ const b = document.getElementById(id); if (b) b.click(); }
     else { setTimeout(()=>window.print(), 60); }
+    window._previewPrintAction = null;
   });
 
   // default dates
@@ -721,11 +1075,19 @@ document.addEventListener('DOMContentLoaded', function(){
     prefix:'INV', gatherFn:()=>gatherInvoiceLikeData('inv'),
     renderFn:(d,l)=>renderInvoiceLike('invoice', d, l), langFn:()=>valOf('inv-lang'),
     onSaved:linkInvoiceLedger, clearFn:()=>clearInvoiceLikeForm('inv'), doPrint:true,
+    ...editOptsFor('invoice'),
   }));
   document.getElementById('inv-save').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'INV', gatherFn:()=>gatherInvoiceLikeData('inv'),
     renderFn:(d,l)=>renderInvoiceLike('invoice', d, l), langFn:()=>valOf('inv-lang'),
     onSaved:linkInvoiceLedger, clearFn:()=>clearInvoiceLikeForm('inv'), doPrint:false,
+    ...editOptsFor('invoice'),
+  }));
+  document.getElementById('inv-share').addEventListener('click', ()=>finalizeAndOutput({
+    prefix:'INV', gatherFn:()=>gatherInvoiceLikeData('inv'),
+    renderFn:(d,l)=>renderInvoiceLike('invoice', d, l), langFn:()=>valOf('inv-lang'),
+    onSaved:linkInvoiceLedger, clearFn:()=>clearInvoiceLikeForm('inv'), doPrint:'share',
+    ...editOptsFor('invoice'),
   }));
 
   // ---- quote tab
@@ -741,11 +1103,19 @@ document.addEventListener('DOMContentLoaded', function(){
     prefix:'QUO', gatherFn:()=>gatherInvoiceLikeData('qt'),
     renderFn:(d,l)=>renderInvoiceLike('quote', d, l), langFn:()=>valOf('qt-lang'),
     onSaved:null, clearFn:()=>clearInvoiceLikeForm('qt'), doPrint:true,
+    ...editOptsFor('quote'),
   }));
   document.getElementById('qt-save').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'QUO', gatherFn:()=>gatherInvoiceLikeData('qt'),
     renderFn:(d,l)=>renderInvoiceLike('quote', d, l), langFn:()=>valOf('qt-lang'),
     onSaved:null, clearFn:()=>clearInvoiceLikeForm('qt'), doPrint:false,
+    ...editOptsFor('quote'),
+  }));
+  document.getElementById('qt-share').addEventListener('click', ()=>finalizeAndOutput({
+    prefix:'QUO', gatherFn:()=>gatherInvoiceLikeData('qt'),
+    renderFn:(d,l)=>renderInvoiceLike('quote', d, l), langFn:()=>valOf('qt-lang'),
+    onSaved:null, clearFn:()=>clearInvoiceLikeForm('qt'), doPrint:'share',
+    ...editOptsFor('quote'),
   }));
 
   // ---- receipt tab
@@ -756,10 +1126,17 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('rec-print').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'REC', gatherFn:gatherReceiptData, renderFn:renderReceipt, langFn:()=>valOf('rec-lang'),
     onSaved:linkReceiptLedger, clearFn:clearReceiptForm, doPrint:true,
+    ...editOptsFor('receipt'),
   }));
   document.getElementById('rec-save').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'REC', gatherFn:gatherReceiptData, renderFn:renderReceipt, langFn:()=>valOf('rec-lang'),
     onSaved:linkReceiptLedger, clearFn:clearReceiptForm, doPrint:false,
+    ...editOptsFor('receipt'),
+  }));
+  document.getElementById('rec-share').addEventListener('click', ()=>finalizeAndOutput({
+    prefix:'REC', gatherFn:gatherReceiptData, renderFn:renderReceipt, langFn:()=>valOf('rec-lang'),
+    onSaved:linkReceiptLedger, clearFn:clearReceiptForm, doPrint:'share',
+    ...editOptsFor('receipt'),
   }));
 
   // ---- delivery tab
@@ -772,10 +1149,17 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('dn-print').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'DN', gatherFn:gatherDeliveryData, renderFn:renderDelivery, langFn:()=>valOf('dn-lang'),
     onSaved:null, clearFn:clearDeliveryForm, doPrint:true,
+    ...editOptsFor('delivery'),
   }));
   document.getElementById('dn-save').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'DN', gatherFn:gatherDeliveryData, renderFn:renderDelivery, langFn:()=>valOf('dn-lang'),
     onSaved:null, clearFn:clearDeliveryForm, doPrint:false,
+    ...editOptsFor('delivery'),
+  }));
+  document.getElementById('dn-share').addEventListener('click', ()=>finalizeAndOutput({
+    prefix:'DN', gatherFn:gatherDeliveryData, renderFn:renderDelivery, langFn:()=>valOf('dn-lang'),
+    onSaved:null, clearFn:clearDeliveryForm, doPrint:'share',
+    ...editOptsFor('delivery'),
   }));
 
   // ---- certificate tab
@@ -786,15 +1170,23 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('cert-print').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'CERT', gatherFn:gatherCertData, renderFn:renderCert, langFn:()=>valOf('cert-lang'),
     onSaved:null, clearFn:clearCertForm, doPrint:true,
+    ...editOptsFor('cert'),
   }));
   document.getElementById('cert-save').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'CERT', gatherFn:gatherCertData, renderFn:renderCert, langFn:()=>valOf('cert-lang'),
     onSaved:null, clearFn:clearCertForm, doPrint:false,
+    ...editOptsFor('cert'),
+  }));
+  document.getElementById('cert-share').addEventListener('click', ()=>finalizeAndOutput({
+    prefix:'CERT', gatherFn:gatherCertData, renderFn:renderCert, langFn:()=>valOf('cert-lang'),
+    onSaved:null, clearFn:clearCertForm, doPrint:'share',
+    ...editOptsFor('cert'),
   }));
 
   // ---- SOA tab
   document.getElementById('soa-generate').addEventListener('click', soaGenerate);
   document.getElementById('soa-print').addEventListener('click', soaPrint);
+  document.getElementById('soa-share').addEventListener('click', soaShare);
   document.getElementById('soa-m-add').addEventListener('click', soaAddManualEntry);
 
   // ---- AI tab
@@ -810,6 +1202,17 @@ document.addEventListener('DOMContentLoaded', function(){
   aiImagesInput.addEventListener('change', async e=>{ await addAiFiles(e.target.files); e.target.value=''; });
   async function addAiFiles(fileList){
     for (const f of Array.from(fileList)){
+      if (f.type === 'application/pdf'){
+        try{
+          showToast('جارِ تحويل صفحات PDF...', 'info');
+          const pages = await pdfFileToImages(f);
+          aiImages.push(...pages);
+        }catch(err){
+          console.error(err);
+          showToast('تعذّر قراءة ملف PDF: ' + err.message, 'err');
+        }
+        continue;
+      }
       if (!f.type.startsWith('image/')) continue;
       const res = await fileToBase64(f);
       aiImages.push(res);
@@ -823,6 +1226,10 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('ai-issueBtn').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'INV', gatherFn:gatherAiInvoiceData, renderFn:(d,l)=>renderInvoiceLike('invoice', d, l),
     langFn:()=>valOf('ai-lang'), onSaved:linkInvoiceLedger, clearFn:clearAiForm, doPrint:true,
+  }));
+  document.getElementById('ai-issueShare').addEventListener('click', ()=>finalizeAndOutput({
+    prefix:'INV', gatherFn:gatherAiInvoiceData, renderFn:(d,l)=>renderInvoiceLike('invoice', d, l),
+    langFn:()=>valOf('ai-lang'), onSaved:linkInvoiceLedger, clearFn:clearAiForm, doPrint:'share',
   }));
   document.getElementById('ai-issueSaveOnly').addEventListener('click', ()=>finalizeAndOutput({
     prefix:'INV', gatherFn:gatherAiInvoiceData, renderFn:(d,l)=>renderInvoiceLike('invoice', d, l),

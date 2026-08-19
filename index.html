@@ -94,6 +94,7 @@
       <div class="btnrow">
         <button class="btn" id="inv-preview" type="button">👁 معاينة</button>
         <button class="btn orange" id="inv-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn" id="inv-share" type="button" style="background:#25D366">📤 مشاركة (واتساب)</button>
         <button class="btn outline" id="inv-save" type="button">💾 حفظ فقط</button>
       </div>
     </div>
@@ -129,6 +130,7 @@
       <div class="btnrow">
         <button class="btn" id="qt-preview" type="button">👁 معاينة</button>
         <button class="btn orange" id="qt-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn" id="qt-share" type="button" style="background:#25D366">📤 مشاركة (واتساب)</button>
         <button class="btn outline" id="qt-save" type="button">💾 حفظ فقط</button>
       </div>
     </div>
@@ -159,6 +161,7 @@
       <div class="btnrow">
         <button class="btn" id="rec-preview" type="button">👁 معاينة</button>
         <button class="btn orange" id="rec-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn" id="rec-share" type="button" style="background:#25D366">📤 مشاركة (واتساب)</button>
         <button class="btn outline" id="rec-save" type="button">💾 حفظ فقط</button>
       </div>
     </div>
@@ -188,6 +191,7 @@
       <div class="btnrow">
         <button class="btn" id="dn-preview" type="button">👁 معاينة</button>
         <button class="btn orange" id="dn-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn" id="dn-share" type="button" style="background:#25D366">📤 مشاركة (واتساب)</button>
         <button class="btn outline" id="dn-save" type="button">💾 حفظ فقط</button>
       </div>
     </div>
@@ -211,6 +215,7 @@
       <div class="btnrow">
         <button class="btn" id="cert-preview" type="button">👁 معاينة</button>
         <button class="btn orange" id="cert-print" type="button">🖨 طباعة / PDF</button>
+        <button class="btn" id="cert-share" type="button" style="background:#25D366">📤 مشاركة (واتساب)</button>
         <button class="btn outline" id="cert-save" type="button">💾 حفظ فقط</button>
       </div>
     </div>
@@ -231,6 +236,7 @@
       <div class="btnrow">
         <button class="btn" id="soa-generate" type="button">📄 توليد الكشف</button>
         <button class="btn orange" id="soa-print" type="button" disabled>🖨 طباعة / PDF</button>
+        <button class="btn" id="soa-share" type="button" style="background:#25D366" disabled>📤 مشاركة (واتساب)</button>
       </div>
       <div id="soa-preview-note" class="hint" style="margin-top:8px"></div>
     </div>
@@ -251,13 +257,13 @@
   <div class="view" id="view-ai">
     <div class="card">
       <h2>✨ اكتب واطلب — تحليل بالذكاء الاصطناعي</h2>
-      <p class="small">اكتب وصف الطلب، وارفع صورة أو أكثر للبضاعة/المواد المستخدمة، وحدّد نسبة الزيادة على السعر. المنصة تحلّل الصورة والنص وتقترح بنودًا وأسعارًا، ثم تحوّلها مباشرة إلى فاتورة قابلة للتعديل.</p>
+      <p class="small">اكتب وصف الطلب، وارفع صورة أو أكثر للبضاعة/المواد — أو صورة/PDF لعرض سعر أو فاتورة من مورّد — وحدّد نسبة الزيادة على السعر وأجرة الأعمال. المنصة تحلّل المحتوى وتقترح بنودًا وأسعارًا، ثم تحوّلها مباشرة إلى فاتورة قابلة للتعديل.</p>
       <div class="field"><label>اكتب ما تريد</label>
         <textarea id="ai-text" placeholder="مثلاً: تركيب وحدة تكييف سبليت 18000 مع تمديد نحاس وكهرباء..."></textarea>
       </div>
-      <div class="field"><label>صور البضاعة/المواد</label>
-        <div class="uploadbox" id="ai-uploadbox">اضغط هنا أو اسحب الصور (يمكن اختيار أكثر من صورة)</div>
-        <input type="file" id="ai-images" accept="image/*" multiple style="display:none">
+      <div class="field"><label>صور البضاعة/المواد — أو صورة/PDF لفاتورة مورّد</label>
+        <div class="uploadbox" id="ai-uploadbox">اضغط هنا أو اسحب الصور — يمكن أيضًا رفع ملف PDF لعرض سعر أو فاتورة من مورّد وسيتم استخراج بنودها تلقائيًا</div>
+        <input type="file" id="ai-images" accept="image/*,application/pdf" multiple style="display:none">
         <div class="thumbrow" id="ai-thumbs"></div>
       </div>
       <div class="grid cols-2" style="max-width:460px">
@@ -293,6 +299,7 @@
       <div class="msg info" id="ai-totalsPreview">الإجمالي: 0.00 $</div>
       <div class="btnrow">
         <button class="btn orange" id="ai-issueBtn" type="button">🖨 إصدار الفاتورة وطباعتها</button>
+        <button class="btn" id="ai-issueShare" type="button" style="background:#25D366">📤 إصدار ومشاركة (واتساب)</button>
         <button class="btn outline" id="ai-issueSaveOnly" type="button">💾 حفظ الفاتورة فقط</button>
       </div>
     </div>
@@ -371,6 +378,7 @@
 </div>
 
 <div id="printArea"></div>
+<datalist id="materialsDatalist"></datalist>
 <div id="previewBar" class="previewbar">
   <button id="previewClose" class="btn outline sm" type="button">✖ إغلاق</button>
   <button id="previewPrintBtn" class="btn orange sm" type="button">🖨 طباعة / PDF (يحفظ في الأرشيف)</button>
@@ -379,6 +387,9 @@
 
 <script src="vendor_qrcode.js"></script>
 <script src="vendor_jsqr.js"></script>
+<script src="vendor_html2canvas.js"></script>
+<script src="vendor_jspdf.js"></script>
+<script src="vendor_pdfjs.js"></script>
 <script src="i18n.js"></script>
 <script src="store.js"></script>
 <script src="render.js"></script>
